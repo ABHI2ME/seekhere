@@ -1,6 +1,7 @@
 import express from "express" ;
 import dotenv from 'dotenv' ;
 import authRoutes from './routes/auth.route.js' ;
+import { dbConnect } from "./libs/dbConnect.js";
 
 
 dotenv.config() ;
@@ -13,6 +14,9 @@ app.use("/api/auth" , authRoutes) ;
 
 
 
-app.listen(PORT , ()=>{
-    console.log('server is running on port' , PORT ) ;
+app.listen(PORT , async ()=>{
+    await dbConnect() ;
+    console.log("server listening to port " , PORT) ;
 })
+
+
