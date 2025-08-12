@@ -2,8 +2,8 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 dotenv.config() ;
 
-const generateTokens = (userId) =>{
-    const accessToken = jwt.sign({userId} , process.env.ACCESS_TOKEN_SECRET , {
+const generateTokens = async (userId) =>{
+    const accessToken =  jwt.sign({userId} , process.env.ACCESS_TOKEN_SECRET , {
          expiresIn: "15m" ,
     } ) ;
 

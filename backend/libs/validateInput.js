@@ -3,9 +3,9 @@ import * as z from "zod" ;
 const signupValidation = z.object({
     username : z.string()
         .min(6 , "username must be at least 6 characters long")
-        .max(14 , "username must be at max 10 characters long")
+        .max(20 , "username must be at max 20 characters long")
         .trim()
-        .regex(/^[A-Za-z-]+$/, "Username can only contain letters and hyphens") , 
+        .regex(/^[A-Za-z0-9@-]+$/, "Username can only contain letters , numbers ,  @ and hyphens") , 
     email: z.string().email("Invalid email"),
     password : z.string()
         .min(8, "Password must be at least 8 characters")

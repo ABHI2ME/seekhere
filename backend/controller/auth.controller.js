@@ -1,10 +1,13 @@
-import { stringFormat } from "zod";
+import { stringFormat, success } from "zod";
+import jwt from "jsonwebtoken" ;
 import client from "../libs/redis.js";
 import sendEmailVerificationCode from "../libs/sendEmailVerificationCode.js";
 import signupValidation from "../libs/validateInput.js";
 import User from "../models/user.model.js";
 import {generateVerificationCode, verifyOtp} from "../utils/generateAndStoreOtp.js";
 import generateTokens from "../utils/generateTokens.js";
+import dotenv from "dotenv" ;
+dotenv.config() ;
 
 import setCookieToken from "../utils/setCookieToken.js";
 import storeRefreshToken from "../utils/storeRefreshToken.js";
@@ -17,19 +20,26 @@ export const Signup = async (req , res) =>{
           
           const validateData = signupValidation.safeParse(req.body);
            if (!validateData.success) {
-          // Return all Zod validation errors
-          return res.status(400).json({
-          errors: validateData.error.format(),
-          });
+               // Return all Zod validation errors
+               return res.status(400).json({
+               errors: validateData.error.format(),
+               });
             }
           
-          const {email , username , password} =  validateData.data ;
+          const {username , password} =  validateData.data ;
+          const email  = validateData.data.email.toLowerCase() ;
+          
+       
 
-          const key = `coolDownOtp:${String(email).toLocaleLowerCase()}` ;
-          const cooldownUser = await client.exists(key) ;
-          if(cooldownUser){
-               return res.status(400).json({message:"the user is in cooldown period"}) ;
-               // will give toaster or redirect to verify-otp page with remaining time
+          // const key = `coolDownOtp:${String(email).toLocaleLowerCase()}` ;
+          // const cooldownUser = await client.exists(key) ;
+          // if(cooldownUser){
+          //      return res.status(400).json({message:"the user is in cooldown period"}) ;
+          //      // will give toaster or redirect to verify-otp page with remaining time
+          // }
+          const existingUsername = await User.findOne({username}) ;
+          if(existingUsername){
+               return res.status(400).json({message : "the username is already taken"}) ;
           }
 
           const UserExisting = await User.findOne({email}) ;
@@ -38,7 +48,7 @@ export const Signup = async (req , res) =>{
                const emailVerification = UserExisting.isVerified ;
                if(!emailVerification){
                      // will redirect the user to enter the otp page on frontend 
-                     req.status(400).json({message : "the user is not verified for email"}) ;
+                    return res.status(400).json({message : "the user is not verified for email"}) ;
                      
                }
                else{
@@ -47,16 +57,14 @@ export const Signup = async (req , res) =>{
  
           }
 
+
+
           
           const user = await  User.create({username , email , password }) ;
 
-          const {accessToken , refreshToken} = generateTokens(user._id) ;
-          await storeRefreshToken(user._id , refreshToken) ; 
-          setCookieToken(accessToken, refreshToken  , res) ;
-          generateOtpSessionId(res , email) ; // created to get the email on the page of /verify-otp from cookie-session
-          const verificationCode =  generateVerificationCode() ;
-          console.log(verificationCode) ;
-          sendEmailVerificationCode(verificationCode) ;
+          await generateOtpSessionId(res , email) ; // created to get the email on the page of /verify-otp from cookie-session
+          const verificationCode = await generateVerificationCode(email) ;
+          sendEmailVerificationCode(verificationCode , email) ;
 
 
           return   res.status(201).json({
@@ -73,20 +81,63 @@ export const Signup = async (req , res) =>{
 export const Login = async (req , res) =>{
      try{
          const {email  , password} = req.body ;
+         
+         const user = await User.findOne({email}) ;
+         if(!user){
+            return res.status(401).json({ success : false , message : "invalid credentials"})
+         }
+
+         const isMatch = await user.comparePassword(password);
+         if(!isMatch){
+             return res.status(401).json({ success : false , message : "invalid credentials"})
+         }
+
+          const {accessToken , refreshToken} = await generateTokens(user._id) ;
+          await storeRefreshToken(user._id , refreshToken) ; 
+          await setCookieToken(accessToken, refreshToken  , res) ;
+
+          return res.status(201).json({success : true , message:"login successfull"}) ;
 
      }catch(error){
-
+         console.log("error in login funtion ", error.message) ;
+         res.status(400).json({success : false , message : "error in logging in"}) ;
      }
 } ;
 
 export const VerifyOtpByUser = async(req , res) => {
-      verifyOtp();
+      verifyOtp(req , res);
 }
 
 
 
 export const Logout = async (req , res) =>{
-     res.send("signup here") ;
+     try {
+          const refreshToken = req.cookies.refreshToken ;
+          const accessToken = req.cookies.accessToken ;
+          
+          const decoded =  await jwt.verify(refreshToken , process.env.REFRESH_TOKEN_SECRET);
+          const userId = decoded.userId ;
+
+          await client.del(`refresh_token:${userId}`) ;
+          res.clearCookie("refreshToken" , {
+               httpOnly : true , 
+               secure : process.env.NODE_ENV === "production" , 
+               sameSite : "strict" 
+
+          }) ;
+
+          res.clearCookie("accessToken" , {
+                httpOnly : true , 
+                secure : process.env.NODE_ENV === "production" , 
+                sameSite : "strict"  
+          })
+
+          res.status(200).json({success : true , message :"logout successfully"}) ;
+
+     } catch (error) {
+           console.log("error in logout code block " , error.message) ;
+           res.status(400).json({sucess : false , message : "error in logging out"}) ;
+     }
 } ;
 
 export const resetPassword = async (req , res) =>{
