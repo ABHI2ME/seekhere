@@ -1,7 +1,6 @@
 import { stringFormat, success } from "zod";
 import jwt from "jsonwebtoken" ;
 import client from "../libs/redis.js";
-import sendEmailVerificationCode from "../libs/sendEmailVerificationCode.js";
 import signupValidation from "../libs/validateInput.js";
 import User from "../models/user.model.js";
 import {generateVerificationCode, verifyOtp} from "../utils/generateAndStoreOtp.js";
@@ -12,6 +11,7 @@ dotenv.config() ;
 import setCookieToken from "../utils/setCookieToken.js";
 import storeRefreshToken from "../utils/storeRefreshToken.js";
 import generateOtpSessionId from "../utils/generateOtpSessionId.js";
+import sendEmailVerificationCode from "../utils/sendVerificationEmail.js";
 
 
 export const Signup = async (req , res) =>{
@@ -64,7 +64,7 @@ export const Signup = async (req , res) =>{
 
           await generateOtpSessionId(res , email) ; // created to get the email on the page of /verify-otp from cookie-session
           const verificationCode = await generateVerificationCode(email) ;
-          sendEmailVerificationCode(verificationCode , email) ;
+          await sendEmailVerificationCode(verificationCode , email) ;
 
 
           return   res.status(201).json({
