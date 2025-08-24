@@ -1,5 +1,5 @@
 import { stringFormat, success } from "zod";
-import jwt from "jsonwebtoken" ;
+import jwt, { decode } from "jsonwebtoken" ;
 import client from "../libs/redis.js";
 import signupValidation from "../libs/validateInput.js";
 import User from "../models/user.model.js";
@@ -12,6 +12,7 @@ import setCookieToken from "../utils/setCookieToken.js";
 import storeRefreshToken from "../utils/storeRefreshToken.js";
 import generateOtpSessionId from "../utils/generateOtpSessionId.js";
 import sendEmailVerificationCode from "../utils/sendVerificationEmail.js";
+import { raw } from "express";
 
 
 export const Signup = async (req , res) =>{
@@ -60,7 +61,13 @@ export const Signup = async (req , res) =>{
 
 
           
-          const user = await  User.create({username , email , password }) ;
+          const user = await  User.create({
+               username ,
+               email ,
+               password ,
+               verificationExpiry : new Date(Date.now() + 2*24*60*60*1000) 
+               
+               }) ;
 
           await generateOtpSessionId(res , email) ; // created to get the email on the page of /verify-otp from cookie-session
           const verificationCode = await generateVerificationCode(email) ;
@@ -104,10 +111,43 @@ export const Login = async (req , res) =>{
      }
 } ;
 
+export const refershAccessToken = async (req ,res) =>{
+     try {
+          const rawToken = req.cookies.refreshToken ;
+          if(!rawToken){
+               return res.status(401).json({success : false , message : "token expired "}) ;
+          } ;
+
+          const decoded = await jwt.verify(rawToken , process.env.REFRESH_TOKEN_SECRET) ;
+          const storedToken = await client.get(`refresh_token:${decoded.userId}`) ;
+
+          if(storedToken !== rawToken){
+               return res.status(400).json({sucess : false , message : "invalid token"}) ;
+          }
+
+          const accessToken = jwt.sign({userId :decoded.userId }, process.env.ACCESS_TOKEN_SECRET , {
+               expiresIn: "15m" ,
+          }) ;
+
+           res.cookie("accessToken" , accessToken , {
+           httpOnly : true ,
+           secure: process.env.NODE_ENV === "production" ,
+           sameSite:"strict" ,
+           maxAge: 15*60*1000
+
+          });
+
+           res.json({message : "the token refreshed successfully"}) ;
+
+     } catch (error) {
+          console.log("error in refresh token automatically " ,error.message) ;
+          res.status(400).json({success : false , message : "server error " + error.message}) ;
+     }
+}
+
 export const VerifyOtpByUser = async(req , res) => {
       verifyOtp(req , res);
 }
-
 
 
 export const Logout = async (req , res) =>{
@@ -141,5 +181,5 @@ export const Logout = async (req , res) =>{
 } ;
 
 export const resetPassword = async (req , res) =>{
-     res.send("signup here") ;
+     
 } ;

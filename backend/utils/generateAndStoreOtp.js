@@ -22,7 +22,7 @@ export const generateVerificationCode = async  (email) =>{
         const n = crypto.randomInt(0 , 1000000) ;
         console.log(n) ;
         return String(n).padStart(6 , "0");
-    }
+        }
 
    
 
@@ -43,7 +43,7 @@ export const generateVerificationCode = async  (email) =>{
 
         return otp ;
        
-    }
+        }
 
        return  StoreHashOtpRedis(email) ;
      } catch (error) {
@@ -99,7 +99,8 @@ export const verifyOtp = async (req , res) => {
         await client.del(`coolDownOtp:${email}`) ;
         await User.updateOne(
             {email : email} ,
-            {$set : {isVerified: true}}
+            {$set : {isVerified: true} , 
+             $unset : { verificationExpiry : ""}}
         ) ;
         res.clearCookie("otp_sid") ;
         return res.status(200).json({success : true , message : "user verified"}) ;

@@ -1,4 +1,4 @@
-export const verificationCodeEmailTemplate = (code) => { 
+export const resetPasswordEmailTemplate = (code) => { 
 const digits = String(code).split('') ;
 
   return `<!DOCTYPE html>
@@ -134,11 +134,11 @@ const digits = String(code).split('') ;
                 <tr>
                     <td style="padding:25px;">
                         <a href="https://example.com" target="_blank">
-                            <img class="nano_logo" style="max-width: 200px; width: 100%; height: auto; display: block; margin: 0 auto 20px auto;"  src="https://res.cloudinary.com/dcnvefdww/image/upload/v1755106946/10207836_jihit1.jpg" alt="Logo">
+                            <img class="nano_logo"  src="https://res.cloudinary.com/dcnvefdww/image/upload/v1755134427/freepik__adjust__9891_el6qj3.png" style="max-width: 250px; width: 100%; height: auto; display: block; margin: 0 auto 20px auto;" alt="Logo">
                         </a>
 
-                        <div class="nano_h1">Verify your email</div>
-                        <div class="nano_p">We received a request to verify your email address. Use the code below to continue.
+                        <div class="nano_h1">Reset password for account</div>
+                        <div class="nano_p">We received a request to reset your password. Use the code below to continue.
                         If you didn’t request this, you can ignore this message.</div>
 
                         <!-- OTP CODE USING TABLE -->
@@ -182,8 +182,7 @@ const digits = String(code).split('') ;
                         <div>© 2025 Seekhere LLC</div>
                         <div>Uttar Pradesh , India</div>
                         <div class="nano_divider"></div>
-                        <div>The message was sent to your email address to verify your code. If you have any queries please contact our team at  
-                            <a href="mailto:seekhere.teams@gmail.com">seekhere.teams@gmail.com</a>.
+                        <div>The message was sent to your email address to reset you password. If you have any queries please contact our team at <a href="mailto:seekhere.teams@gmail.com">seekhere.teams@gmail.com</a>.
                         </div>
                     </td>
                 </tr>

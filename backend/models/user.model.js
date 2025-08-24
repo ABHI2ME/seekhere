@@ -18,9 +18,10 @@ const userSchema = new mongoose.Schema({
   bio: {
     type : String
   } , 
-  profilePic : {
-    type: String 
-  } ,
+  profilePic: {
+    url: { type: String },
+    public_id: { type: String } 
+  },
   email: {
     type: String,
     unique: true,
@@ -56,6 +57,9 @@ const userSchema = new mongoose.Schema({
     type:mongoose.Schema.Types.ObjectId, 
     ref: "Friends"
   }] ,   // References to other users
+
+  verificationExpiry: { type: Date, index: { expires: 0 } }, // TTL to remove unverified users after 2 dyas 
+
   created_at: {
     type: Date,
     default: Date.now,
