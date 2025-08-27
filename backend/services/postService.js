@@ -29,7 +29,7 @@ export const createNewPost = async (req , {text , userId}) => {
         public_id : imageURL.public_id, 
         type : "image",
        })
-        await fs.unlink(req.file.path) ;
+       await fs.unlink(req.file.path);
       }
      
     

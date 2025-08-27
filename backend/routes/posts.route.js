@@ -1,7 +1,8 @@
 import express from 'express' ;
 import protectRoute from '../middleware/auth.middleware.js';
-import { createPost, deletePost, getAllPosts, getPostById } from '../controller/post.controller.js';
+import { createCommentReplies, createFirstLevelComments, createPost, deletePost, getAllPosts, getPostById, getRepliesByCommentId } from '../controller/post.controller.js';
 import createUpload from '../middleware/multer.middleware.js';
+import inputValidation from '../middleware/inputValidation.js';
 
 const router = express.Router() ;
 
@@ -15,9 +16,11 @@ const postUpload = createUpload({
 router.post('/' , protectRoute , postUpload.single("image") , createPost) ;
 //frontend url will look like GET /api/posts?page=1&limit=20
 router.get('/' , getAllPosts) ;
-router.get('/:id' , getPostById) ;
-router.delete('/:id', protectRoute , deletePost) ;
-
+router.get('/:postId' , getPostById) ;
+router.delete('/:postId', protectRoute , deletePost) ;
+router.get('/:postId/comments/:commentId/replies' , getRepliesByCommentId) ;
+router.post('/:postId/comments' , protectRoute , inputValidation(250) , createFirstLevelComments) ;
+router.post('/:postId/comments/:commentId' , protectRoute , inputValidation(200) ,createCommentReplies) ;
 
 export default router ;
 

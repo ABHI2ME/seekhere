@@ -14,6 +14,13 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
+  console.error("Error caught in middleware:", {
+    message: err.message,
+    statusCode: err.statusCode,
+    errorType: err.errorType,
+    stack: err.stack,
+  });
+
   // Custom AppError (from utils/AppError)
   if (err.statusCode) {
     return res.status(err.statusCode).json({

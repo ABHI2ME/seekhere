@@ -1,7 +1,12 @@
 import * as postService from '../services/postService.js' ;
 import User from '../models/user.model.js';
+import { PrismaClient } from '@prisma/client';
 import mongoose from 'mongoose';
-import fs from 'fs'
+import fs from 'fs' ;
+import AppError from '../utils/appError.js';
+import Post from '../models/post.model.js';
+
+const prisma = new PrismaClient() ;
 
 
 export const createPost = async (req , res, next) => {
@@ -11,8 +16,21 @@ export const createPost = async (req , res, next) => {
          console.log("my text inside controller is " , text) ;
          const userId = req.user._id ;
          const post = await postService.createNewPost( req , {text , userId}) ;
-
-         return res.status(201).json({success : true , message : "post created successfully" , data : post}) ;
+         
+         const filteredPost = {
+             postId : post._id , 
+             content : post.content , 
+             media : post.media.map(e => ({
+                        url : e.url , 
+                        type : e.type , 
+                     })) , 
+             likesCount : post.likesCount , 
+             commentsCount : post.commentsCount , 
+             tags    : post.tags , 
+             createdAt : post.createdAt , 
+             updatedAt : post.updatedAt
+          }
+         return res.status(201).json({success : true , message : "post created successfully" , data : filteredPost}) ;
      } catch (error) {
          if (error.name === "ValidationError") {
          return res.status(400).json({
@@ -64,36 +82,87 @@ export const getAllPosts = async (req, res) => {
       user: userMap[p.userId.toString()] || null,
     }));
 
-    return res.json({ success: true, data: response , nextCursor });
+    const filtredResponse = response.map( data => ({
+       postId : data._id , 
+       content : data.content , 
+       media : data.media.map(e => ({
+                    url : e.url , 
+                    type : e.type
+               })) , 
+       likesCount : data.likesCount , 
+       commentsCount : data.commentsCount , 
+       createdAt : data.createdAt , 
+       updatedAt : data.updatedAt , 
+       user : {
+                 username : data.user.username , 
+                 profilePic : data.user.profilePic.url ,
+              }
+    })) ;
+
+    return res.json({ success: true, data: filtredResponse , nextCursor });
   } catch (error) {
     console.error("getPosts error:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-export const getPostById = async (req, res) => {
+export const getPostById = async (req, res , next) => {
   try {
     const { postId } = req.params;
+    let {cursor  , limit=10}   = req.query ;
+    
+    console.log("my cursor in getPostById is " , cursor) ;
+    console.log("my postid is ", postId);
+
     const post = await postService.getPostWithComments(postId);
     if (!post) return res.status(404).json({ success: false, message: "Post not found" });
 
     // Resolve user separately
     const user = await User.findById(post.userId).select("_id username profilePic ").lean();
-
-    // Fetch comments (could later move to CommentService)
+    limit = parseInt(limit , 10) || 10 ;
+    cursor = parseInt(cursor , 10) || null ;
+    if (isNaN(limit) || limit <= 0 || limit > 20) limit = 20;
+    
     // const comments = await Comment.find({ postId }).sort({ createdAt: -1 }).lean();
+    const comments = await prisma.comment.findMany({
+         where : {postId : String(postId) , parentId : null} ,
+         orderBy : {createdAt : "desc"} ,
+         ...(cursor && {cursor : {id : cursor} , skip : 1}) ,  
+         take : limit + 1 , 
+
+    }) ;
+
+    const hasMore = comments.length > limit ;
+    const results = hasMore ? comments.slice(0 , limit) : comments ;
+
+    console.log("comments are " , comments) ;
 
     return res.json({
       success: true,
       data: {
-        ...post,
-        user: user || null,
-        // comments,
+        postId : post._id , 
+        content : post.content , 
+        media : post.media.map((e) => ({
+                  url : e.url ,
+                  type : e.type ,
+                })) ,
+        likesCount : post.likesCount , 
+        commentsCount : post.commentsCount , 
+        tags   : post.tags , 
+        createdAt : post.createdAt , 
+        updatedAt : post.updatedAt , 
+        user : {
+             username :user.username , 
+             profilePic :user.profilePic.url , 
+        } ,
+        results ,
+        hasMore , 
+        nextCursor : hasMore ? results[results.length -1].id : null  
       },
     });
   } catch (error) {
     console.error("getPostWithComments error:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    next(error) ;
   }
 }
 
@@ -101,17 +170,22 @@ export const deletePost = async (req , res) => {
     try {
         const {postId} = req.params ;
     
-      const post = postService.findPostById(postId) ;
+      const post = await postService.findPostById(postId) ;
       if(!post){
         return res.status(400).json({success : false , message : "the post does not exists"}) ;
       }
-      
       if(post.userId.toString() !== req.user._id.toString()){
          return res.status(400).json({success : false , message : "you are not allowed to delete this post"}) ;
       }
       
-
+      // :( i think i need here some transaction type of code but two different types of databases , doomed !!!
       const response = await postService.deletePostById(postId) ;
+
+      await prisma.comment.deleteMany({
+           where : {
+               postId : String(postId) ,
+           }
+      })
 
       return res.json({ success: true, message : "post deleted successfully"}) ;
     } catch (error) {
@@ -120,3 +194,137 @@ export const deletePost = async (req , res) => {
     }
 
 }
+
+export const getRepliesByCommentId = async (req , res ,  next) => {
+   try {
+      const {postId , commentId } =  req.params ;
+      let {cursor , limit} = req.query ;
+
+      // const postExists =  await Post.findById(id) ;
+      // if(!postExists){
+      //     throw new AppError("the error in postId", 501, "server error") ;
+      // }
+      
+      const parentCommentExists = await prisma.comment.findFirst({
+         where : {
+             id : Number(commentId) , 
+             postId: String(postId) 
+         }
+      }) ;
+      if(!parentCommentExists){
+          throw new AppError("commentId does not exists" , 404 , "comment not found") ;
+      }
+      
+      limit = parseInt(limit , 10) || 10 ;
+      if(isNaN(limit) || limit < 1 || limit > 10) limit = 10 ;
+
+      
+
+      const comments = await prisma.comment.findMany({
+          where : {
+              parentId : Number(commentId)  
+          } ,
+          orderBy : [{createdAt : 'desc'} , {id : "desc"}] ,
+          ...(cursor ? {cursor : {id : Number(cursor)} , skip :1 } : {}) , 
+          take : limit+1 , 
+          select : {
+             id : true , 
+             userName : true , 
+             comment : true
+          }
+      }) ; 
+      const hasMore = comments.length > Number(limit) ;
+      const results = hasMore ? comments.slice(0 , limit) : comments ;
+
+      return res.json({
+         success : true , 
+         data : {
+              results , 
+              hasMore , 
+              nextCursor : hasMore ? results[results.length-1].id : null 
+         }
+      })
+
+   } catch (error) {
+      next(error) ;
+   }
+} ;
+
+export const createFirstLevelComments = async (req, res , next) => {
+      try {
+          const {postId} = req.params ;
+          const {text} = req.body ;
+
+          const user = req.user ;
+
+
+
+          const postExists = await Post.findById(postId) ;
+          if(!postExists){
+              throw new AppError("the post doesn't exists",404,"post not found") ;
+          }
+
+          const comment = await prisma.comment.create({
+              data : {  
+                        userName : user.username ,
+                        comment : String(text) , 
+                        postId : String(postId) ,
+                        commentorId : user._id.toString() , 
+                        parentId : null , 
+                        createdAt : new Date() , 
+                     }
+          }) ;
+          console.log("user created the comment ",comment) ;
+          res.json({sucess : true , message : "commented successfully" , data:comment }) ;
+
+          
+      } catch (error) {
+          console.log("error in createFirstLevelCommet ", error) ;
+          next(error) ;
+      }
+} ;
+
+export const createCommentReplies = async (req , res , next ) => {
+       try {
+            const {postId , commentId} = req.params ;
+            const {text} = req.body ;
+            const user = req.user ;
+            
+            const postExists = await Post.findById(postId) ;
+            if(!postExists){
+                throw new AppError("the post doesn't exists",404,"post not found") ;
+            }
+
+            const commentExists = await prisma.comment.findUnique({
+                where : {
+                           id : Number(commentId),
+                        } 
+            }) ;
+            if(!commentExists){
+                 throw new AppError("the comment doesn't exists",404,"comment not found") ;
+            }
+
+            const reply = await prisma.comment.create({
+                data : {
+                           userName : user.username , 
+                           postId : String(postId) ,
+                           comment : String(text) ,
+                           commentorId : String(user._id) ,
+                           parentId : Number(commentId) ,
+                           createdAt :  new Date() 
+                       }
+            })
+
+            res.json({
+               sucess : true , 
+               message : "replied to comment successfully", 
+               data : reply
+            })
+
+
+       } catch (error) {
+          console.log("error in createCommnentREplies " ,  error) , 
+          next(error) ;
+       }
+} ;
+
