@@ -1,12 +1,13 @@
 import * as postService from '../services/postService.js' ;
 import User from '../models/user.model.js';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../libs/prisma.js';
 import mongoose from 'mongoose';
 import fs from 'fs' ;
+import {v4 as uuid} from 'uuid' ;
 import AppError from '../utils/appError.js';
 import Post from '../models/post.model.js';
-
-const prisma = new PrismaClient() ;
+import { sendPostLike } from '../services/kafkaService/kafkaProducer.js';
+import redisClient from '../libs/redisDocker.js';
 
 
 export const createPost = async (req , res, next) => {
@@ -66,7 +67,28 @@ export const getAllPosts = async (req, res) => {
        cursor , 
        limit : parseInt(limit , 10),
     })
-     
+    //making array for all postIds 
+    const postIds = posts.map((e) => e._id.toString()) ;
+    const pipeline =  redisClient.pipeline() ;
+    postIds.map((e) => pipeline.get(`post:${e}:likes`)) ;
+
+    const redisResults = await pipeline.exec() ;
+    // getting all available counts of like for post from redis 
+    const redisCounts = redisResults.map(([err,val]) => (val !== null) ? parseInt(val ,10) : null ) ;
+    // find missing postIds 
+    const missingPostIds = postIds.filter((e , i)=> redisCounts[i] === null) ;
+    let dbCounts = [] ;
+
+    if(missingPostIds.length > 0){
+       const rows = await prisma.PostLikesCount.findMany({
+            where : {postId : {in : missingPostIds}} ,
+            select : {postId :true  , count : true} , 
+       }) ;
+       // making look-up table for postId : count for missing postIds in redis 
+       dbCounts = Object.fromEntries(rows.map((e) => [e.postId.toString() , e.count])) ;
+    }
+
+
    
     const userIds = [...new Set(posts.map(p => p.userId.toString()))];
 
@@ -82,22 +104,28 @@ export const getAllPosts = async (req, res) => {
       user: userMap[p.userId.toString()] || null,
     }));
 
-    const filtredResponse = response.map( data => ({
-       postId : data._id , 
-       content : data.content , 
-       media : data.media.map(e => ({
-                    url : e.url , 
-                    type : e.type
-               })) , 
-       likesCount : data.likesCount , 
-       commentsCount : data.commentsCount , 
-       createdAt : data.createdAt , 
-       updatedAt : data.updatedAt , 
-       user : {
-                 username : data.user.username , 
-                 profilePic : data.user.profilePic.url ,
-              }
-    })) ;
+    
+
+    const filtredResponse = response.map((data , i) => {
+        const redisCount = redisCounts[i] ;
+        const dbCount = dbCounts[data._id.toString()] ?? 0 ;
+        return {
+          postId : data._id , 
+          content : data.content , 
+          media : data.media.map(e => ({
+                        url : e.url , 
+                        type : e.type
+                  })) , 
+          likesCount : redisCount ?? dbCount , 
+          commentsCount : data.commentsCount , 
+          createdAt : data.createdAt , 
+          updatedAt : data.updatedAt , 
+          user : {
+                    username : data.user.username , 
+                    profilePic : data.user.profilePic.url ,
+                  }
+        }
+    }) ;
 
     return res.json({ success: true, data: filtredResponse , nextCursor });
   } catch (error) {
@@ -136,6 +164,18 @@ export const getPostById = async (req, res , next) => {
     const results = hasMore ? comments.slice(0 , limit) : comments ;
 
     console.log("comments are " , comments) ;
+    let redisCount = await redisClient.get(`post:${post._id.toString()}:likes`) ;
+    redisCount = redisCount !== null ? parseInt(redisCount , 10) : null ;  
+
+    let dbCount = null ;
+    if(!redisCount){
+        const row =  await prisma.PostLikesCount.findUnique({
+             where: {postId : post._id.toString()} , 
+             select : {count: true}
+        })
+        dbCount = row?.count ?? 0
+    } ;
+
 
     return res.json({
       success: true,
@@ -146,7 +186,7 @@ export const getPostById = async (req, res , next) => {
                   url : e.url ,
                   type : e.type ,
                 })) ,
-        likesCount : post.likesCount , 
+        likesCount : redisCount ?? dbCount.count , 
         commentsCount : post.commentsCount , 
         tags   : post.tags , 
         createdAt : post.createdAt , 
@@ -326,5 +366,49 @@ export const createCommentReplies = async (req , res , next ) => {
           console.log("error in createCommnentREplies " ,  error) , 
           next(error) ;
        }
+} ;
+
+export const LikePostByUSer = async (req , res , next) => {
+    try {
+     const postId = req.params.postId ;
+     const user = req.user ;
+     let {action} = req.body ;
+     action = String(action) ;
+     console.log("*****************************" , action) ;
+
+    const postExists = await Post.findById(postId) ;
+    if(!postExists){
+       return next(new AppError("post doesn't exists" , 404 , "post not found")) ;
+    }
+    const allowedActions = ['UNLIKE' , 'LIKE'] ;
+    if(!allowedActions.includes(action)){
+       return next(new AppError('invalid action specified' , 400 , "not permiited")) ;
+    }
+    
+    //can't check like this , will cause race condition in asynchronous process.
+
+    // const alreadyLiked = await prisma.PostLikes.findUnique({
+    //     where : {
+    //                 postId_userId : {
+    //                           postId : postId , 
+    //                           userId : user._id.toString()
+    //                                 } ,
+    //             } ,
+    // }) ;
+   
+      
+await sendPostLike({
+   eventId : uuid() , 
+   postId , 
+   userId : user._id , 
+   action : action === 'UNLIKE' ? 'UNLIKE' : 'LIKE' , 
+   ts : Date.now()
+})
+
+   res.status(202).json({ status: 'success' , message : "message is queued"}); 
+    } catch (error) {
+        next(error) ;
+    }
+
 } ;
 

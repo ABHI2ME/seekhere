@@ -66,8 +66,6 @@ export const getRecentPosts = async ({cursor , limit}) => {
 
 }
 
-  
-
 export const getPostWithComments  = async (postId) => {
   return await Post.findById(postId).lean();
 };

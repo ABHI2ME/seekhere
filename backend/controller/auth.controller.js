@@ -1,6 +1,5 @@
-import { stringFormat, success } from "zod";
 import jwt, { decode } from "jsonwebtoken" ;
-import client from "../libs/redis.js";
+import client from "../libs/redisUpstash.js";
 import signupValidation from "../libs/validateInput.js";
 import User from "../models/user.model.js";
 import {generateVerificationCode, verifyOtp} from "../utils/generateAndStoreOtp.js";
@@ -12,7 +11,7 @@ import setCookieToken from "../utils/setCookieToken.js";
 import storeRefreshToken from "../utils/storeRefreshToken.js";
 import generateOtpSessionId from "../utils/generateOtpSessionId.js";
 import sendEmailVerificationCode from "../utils/sendVerificationEmail.js";
-import { raw } from "express";
+
 
 
 export const Signup = async (req , res) =>{

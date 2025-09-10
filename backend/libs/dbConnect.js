@@ -13,8 +13,3 @@ export const dbConnect = async () => {
          process.exit(1) ;
      }
 }
-
-
-
-
-

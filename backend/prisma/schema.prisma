@@ -14,6 +14,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+
 model Comment {
    id           Int  @id @default(autoincrement()) 
    postId       String 
@@ -25,7 +26,7 @@ model Comment {
    parentId     Int?
    parent       Comment? @relation("CommentToReplies" , fields: [parentId] , references: [id] , onDelete: Cascade) 
    replies      Comment[] @relation("CommentToReplies")
-   likeCount    Int @default(0)
+   likeCount    CommentLikeCount[]
    likes        CommentLike[]
 
    @@index([parentId])
@@ -36,16 +37,26 @@ model PostLikes {
    id           Int @id @default(autoincrement()) 
    postId       String 
    userId       String 
+   liked        Boolean
    createdAt    DateTime @default(now())
 
    @@index([postId])
    @@unique([postId , userId])
 }
 
+model PostLikesCount {
+   id           Int @id @default(autoincrement())
+   postId       String @unique
+   count        Int @default(0)
+   createdAt    DateTime @default(now())
+   @@index([postId])
+} 
+
 model CommentLike {
    id           Int @id @default(autoincrement())
    commentId    Int
    userId       String
+   liked        Boolean
    createdAt    DateTime @default(now())
    comment      Comment   @relation(fields: [commentId]  , references: [id] , onDelete: Cascade)
    
@@ -53,4 +64,14 @@ model CommentLike {
    @@index([commentId])
 } 
 
+model CommentLikeCount {
+   id           Int @id @default(autoincrement())
+   commentId    Int 
+   userId       String 
+   count        Int @default(0)
+   createdAt    DateTime @default(now())
+   comment      Comment   @relation(fields: [commentId] , references: [id] , onDelete: Cascade)
 
+   @@index([commentId])
+   
+}
